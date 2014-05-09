@@ -25,14 +25,53 @@ def tumblr_client(token)
 end
 
 def generate_ascii(url, width)
-  ascii = `convert "#{url}" jpg:- | jp2a --width=#{width} -`
+  #if url.end_with? '.gif'
+  #  `convert "#{url}" out%05d.jpg`
+  #else
+    ascii = `convert "#{url}" jpg:- | jp2a --width=#{width} -`
+  #end
 end
 
+client = nil
 
+require 'rbcurse'
+#require 'rbcurse/core/util/app'
+#require 'rbcurse/core/util/basestack'
+require 'rbcurse/core/widgets/rmessagebox'
+#require 'rbcurse/core/widgets/rcontainer'
+#require 'rbcurse/core/widgets/rlist'
+#require 'rbcurse/core/widgets/scrollbar'
+VER::start_ncurses  # this is initializing colors via ColorMap.setup
+$log = Logger.new((File.join(ENV["LOGDIR"] || "./" ,"rbc13.log")))
+$log.level = Logger::DEBUG
 
-@client = tumblr_client(xAuth(nil,nil))
-exit if @client.nil?
+@window = VER::Window.root_window
+@form = Form.new @window
+loop do
+  @mb = MessageBox.new :width => 30, :height => 18 do
+    title "Login"
+    item Label.new :row => 1, :text => "Email"
+    add Field.new :name => 'username', :row => 2, :bgcolor => :cyan, :default => Settings::USER
+    item Label.new :row => 3, :text => "Password"
+    add Field.new :name => 'password', :row => 4, :bgcolor => :cyan, :show => '*', :default => Settings::PASS
+    button_type :ok_cancel
+  end
+  if @mb.run == 0
+    token = xAuth(@mb.widget('username').text, @mb.widget('password').text)
+    if token
+      client = tumblr_client(token)
+      break
+    else
+      alert 'Sometimes I forget my password too.'
+    end
+  else
+    break
+  end
+end
 
+#@client = tumblr_client(xAuth(nil,nil))
+exit if client.nil?
+@client = client
 
 
 class String
@@ -46,6 +85,7 @@ class Screen
   def open(&block)
     Curses.init_screen
     Curses.noecho
+    Curses.timeout=0 # use non-blocking read and poll with getch
     yield self
   ensure
     Curses.clear
@@ -73,7 +113,7 @@ class Keyboard
 
   def self.fetch_user_input
     key = Curses.getch || nil
-    key.chr unless key.nil?
+    key.chr unless key.nil? || key.ord > 255
   end
 
   def self.output(options={}, &block)
@@ -224,10 +264,14 @@ Screen.new.open do |screen|
     end
   end
 
+  base.draw
+  Curses.refresh
+
   Keyboard.output do |key|
     case key
     when 'k' then base.row += 5
     when 'j' then base.row -= 5
+    when 'q' then exit
     end
     base.draw
     Curses.refresh
