@@ -267,14 +267,25 @@ Screen.new.open do |screen|
   base.draw
   Curses.refresh
 
-  Keyboard.output do |key|
-    case key
-    when 'k' then base.row += 5
-    when 'j' then base.row -= 5
-    when 'q' then exit
+  loop do
+    input = Curses.getch
+
+    if (keyboard = input.chr unless input.nil? or input.ord > 255)
+      case keyboard
+        when 'k' then base.row += 5
+        when 'j' then base.row -= 5
+        when 'q' then exit
+      end
     end
+
+
+    # if mouse stuff, do that
+
     base.draw
     Curses.refresh
+
+    # Aim for 5Hz
+    sleep 1/5.0
   end
 end
 
