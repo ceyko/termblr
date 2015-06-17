@@ -67,8 +67,11 @@ exit if client.nil?
 
 
 class String
-  def wrap(width)
-    scan(/\S.{0,#{width}}\S(?=\s|$)|\S+/)
+  # Credit: Ruby on Rails 4.2.2 - ActionView::Helpers::TextHelper#word_wrap
+  def wrap(line_width = 80)
+    split("\n").collect! do |line|
+      line.length > line_width ? line.gsub(/(.{1,#{line_width}})(\s+|$)/, "\\1\n").strip : line
+    end * "\n"
   end
 end
 
