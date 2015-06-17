@@ -4,67 +4,64 @@ require 'curses'
 
 require './settings.rb'
 
-def xAuth(user, pass)
-  begin
-    xauth_consumer = OAuth::Consumer.new(Settings::CONSUMER_KEY, Settings::CONSUMER_SECRET, { :site => Settings::ENDPOINT })
-    xauth_token = xauth_consumer.get_access_token(nil, {}, :x_auth_mode => 'client_auth', :x_auth_username => Settings::USER, :x_auth_password => Settings::PASS)
-    xauth_token
-  rescue
-    nil
-  end
-end
 
-def tumblr_client(token)
-  Tumblr.configure do |c|
-    c.consumer_key = token.consumer.key
-    c.consumer_secret = token.consumer.secret
-    c.oauth_token = token.token
-    c.oauth_token_secret = token.secret
-  end
-  Tumblr::Client.new
-end
-
-client = nil
-
-require 'rbcurse'
-#require 'rbcurse/core/util/app'
-#require 'rbcurse/core/util/basestack'
-require 'rbcurse/core/widgets/rmessagebox'
-#require 'rbcurse/core/widgets/rcontainer'
-#require 'rbcurse/core/widgets/rlist'
-#require 'rbcurse/core/widgets/scrollbar'
-VER::start_ncurses  # this is initializing colors via ColorMap.setup
-$log = Logger.new((File.join(ENV["LOGDIR"] || "./" ,"rbc13.log")))
-$log.level = Logger::DEBUG
-
-@window = VER::Window.root_window
-@form = Form.new @window
-loop do
-  @mb = MessageBox.new :width => 30, :height => 18 do
-    title "Login"
-    item Label.new :row => 1, :text => "Email"
-    add Field.new :name => 'username', :row => 2, :bgcolor => :cyan, :default => Settings::USER
-    item Label.new :row => 3, :text => "Password"
-    add Field.new :name => 'password', :row => 4, :bgcolor => :cyan, :show => '*', :default => Settings::PASS
-    button_type :ok_cancel
-  end
-  if @mb.run == 0
-    token = xAuth(@mb.widget('username').text, @mb.widget('password').text)
-    if token
-      client = tumblr_client(token)
-      break
-    else
-      alert 'Sometimes I forget my password too.'
+class Login
+  def xAuth(user, pass)
+    begin
+      xauth_consumer = OAuth::Consumer.new(Settings::CONSUMER_KEY, Settings::CONSUMER_SECRET, { :site => Settings::ENDPOINT })
+      xauth_token = xauth_consumer.get_access_token(nil, {}, :x_auth_mode => 'client_auth', :x_auth_username => Settings::USER, :x_auth_password => Settings::PASS)
+      xauth_token
+    rescue
+      nil
     end
-  else
-    break
+  end
+
+  def tumblr_client(token)
+    Tumblr.configure do |c|
+      c.consumer_key = token.consumer.key
+      c.consumer_secret = token.consumer.secret
+      c.oauth_token = token.token
+      c.oauth_token_secret = token.secret
+    end
+    Tumblr::Client.new
+  end
+
+  def curses
+    client = nil
+
+    require 'rbcurse'
+    require 'rbcurse/core/widgets/rmessagebox'
+    VER::start_ncurses  # this is initializing colors via ColorMap.setup
+    $log = Logger.new((File.join(ENV["LOGDIR"] || "./" ,"rbc13.log")))
+    $log.level = Logger::DEBUG
+
+    @window = VER::Window.root_window
+    @form = Form.new @window
+    loop do
+      @mb = MessageBox.new :width => 30, :height => 18 do
+        title "Login"
+        item Label.new :row => 1, :text => "Email"
+        add Field.new :name => 'username', :row => 2, :bgcolor => :cyan, :default => Settings::USER
+        item Label.new :row => 3, :text => "Password"
+        add Field.new :name => 'password', :row => 4, :bgcolor => :cyan, :show => '*', :default => Settings::PASS
+        button_type :ok_cancel
+      end
+      if @mb.run == 0
+        token = xAuth(@mb.widget('username').text, @mb.widget('password').text)
+        if token
+          client = tumblr_client(token)
+          break
+        else
+          alert 'Sometimes I forget my password too.'
+        end
+      else
+        break
+      end
+    end
+
+    client
   end
 end
-
-#@client = tumblr_client(xAuth(nil,nil))
-exit if client.nil?
-@client = client
-
 
 class String
   # Credit: Ruby on Rails 4.2.2 - ActionView::Helpers::TextHelper#word_wrap
@@ -287,108 +284,50 @@ class Image
   alias to_s current_frame
 end
 
-Screen.new.open do |screen|
-  base = Form.new screen
-  base.height = screen.height
-  base.width = 100
-  if posts = @client.posts("david.tumblr.com", :limit => 10, :filter => 'text')#, :type => 'photo')
-  #if posts = @client.dashboard
-    #@dashboard = Container.new @form, :height => 80, :width => 80, :row => 2, :col => ((FFI::NCurses.COLS-80)/2).floor, :suppress_borders => true, :positioning => :absolute
-    #s = stack :name => 'dashboard', :width => 80, :row => 2, :col => ((FFI::NCurses.COLS-80)/2).floor do
-    #c = Container.new @form, :height => 40, :width => 40, :row => 1, :col => 1 do
-    elems = posts['posts'].each do |post|
-      base.children.push(Post.new screen, base, post)
-      base.children.push(Separator.new screen, base)
-    end
-  end
 
-  base.draw
-  Curses.refresh
+# Only automatically fire up curses if running from a script
+if __FILE__ == $0
+  @client = Login.new.curses
+  exit if @client.nil?
 
-  loop do
-    input = Curses.getch
-
-    if (keyboard = input.chr unless input.nil? or input.ord > 255)
-      case keyboard
-        when 'k' then base.row += 5
-        when 'j' then base.row -= 5
-        when 'q' then exit
+  Screen.new.open do |screen|
+    base = Form.new screen
+    base.height = screen.height
+    base.width = 100
+    if posts = @client.tagged("gif", :limit => 10, :filter => 'text')#, :type => 'photo')
+      #if posts = @client.posts("staff.tumblr.com", :limit => 10, :filter => 'text')#, :type => 'photo')
+      #if posts = @client.dashboard
+      #@dashboard = Container.new @form, :height => 80, :width => 80, :row => 2, :col => ((FFI::NCurses.COLS-80)/2).floor, :suppress_borders => true, :positioning => :absolute
+      #s = stack :name => 'dashboard', :width => 80, :row => 2, :col => ((FFI::NCurses.COLS-80)/2).floor do
+      #c = Container.new @form, :height => 40, :width => 40, :row => 1, :col => 1 do
+      elems = posts.each do |post|
+        base.children.push(Post.new screen, base, post)
+        base.children.push(Separator.new screen, base)
       end
     end
-
-
-    # if mouse stuff, do that
 
     base.draw
     Curses.refresh
 
-    # Aim for 5Hz
-    sleep 1/5.0
+    loop do
+      input = Curses.getch
+
+      if (keyboard = input.chr unless input.nil? or input.ord > 255)
+        case keyboard
+        when 'k' then base.row += 5
+        when 'j' then base.row -= 5
+        when 'q' then exit
+        end
+      end
+
+
+      # if mouse stuff, do that
+
+      base.draw
+      Curses.refresh
+
+      # Aim for 5Hz
+      sleep 1/5.0
+    end
   end
 end
-
-
-# Fuck all this shit. Going to raw curses. I'm slowly learning the irony of the name.
-#require 'rbcurse'
-#require 'rbcurse/core/util/app'
-#require 'rbcurse/core/util/basestack'
-#require 'rbcurse/core/widgets/rmessagebox'
-#require 'rbcurse/core/widgets/rcontainer'
-#require 'rbcurse/core/widgets/rlist'
-#require 'rbcurse/core/widgets/scrollbar'
-#
-#App.new do 
-#  ## application code comes here
-#  @form.help_manager.help_text = "my very own help text, how nice."
-#
-#  @header = app_header "My App", :text_center => "Termblr", :text_right =>"Some text", :color => :black, :bgcolor => :white
-#
-#  @status_line = status_line
-#  @status_line.command { }
-#
-#  loop do
-#    @mb = MessageBox.new :width => 30, :height => 18 do
-#      title "Login"
-#      item Label.new :row => 1, :text => "Email"
-#      add Field.new :name => 'username', :row => 2, :bgcolor => :cyan, :default => Settings::USER
-#      item Label.new :row => 3, :text => "Password"
-#      add Field.new :name => 'password', :row => 4, :bgcolor => :cyan, :show => '*', :default => Settings::PASS
-#      button_type :ok_cancel
-#    end
-#    if @mb.run == 0
-#      token = xAuth(@mb.widget('username').text, @mb.widget('password').text)
-#      if token
-#        client = tumblr_client(token)
-#        break
-#      else
-#        alert 'Sometimes I forget my password too.'
-#      end
-#    else
-#      break
-#    end
-#  end
-#  break
-#
-#  if @client
-#
-#    if posts = @client.posts("codingjester.tumblr.com", :type => "photo", :limit => 2, :filter => 'text')
-#      @dashboard = Container.new @form, :height => 80, :width => 80, :row => 2, :col => ((FFI::NCurses.COLS-80)/2).floor, :suppress_borders => true, :positioning => :absolute
-#      #s = stack :name => 'dashboard', :width => 80, :row => 2, :col => ((FFI::NCurses.COLS-80)/2).floor do
-#      #c = Container.new @form, :height => 40, :width => 40, :row => 1, :col => 1 do
-#      i = 0
-#      elems = posts['posts'].each do |post|
-#        text = "#{post['title'].to_s}\n#{post['body'].to_s}\n#{post['photos'][0]['original_size']['url']}"
-#        t = TextView.new @form, :text => text, :height => 10, :width => 80, :row => i+=10
-#        t.set_content(text, :wrap => :WRAP_WORD)
-#        @dashboard.add_widget t
-#      end
-#      #s = ModStack::Stack.new({:parent => @form, :name => 'dashboard', :width => 80, :row => 20, :col => ((FFI::NCurses.COLS-80)/2).floor}, elems)
-#      #@form.add_widget s
-#      #end
-#      #alert c.to_s
-#      #Scrollbar.new @form, :parent => c, :row_count => 20
-#    end
-#
-#    @form.bind_key('n'){ @dashboard.setrowcol(@dashboard.rowcol[0]+10, @dashboard.rowcol[1]); @dashboard.widgets.each{|w| w.row+=10; @dashboard.correct_component w}}
-#  end
-#end
