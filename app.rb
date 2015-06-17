@@ -24,14 +24,6 @@ def tumblr_client(token)
   Tumblr::Client.new
 end
 
-def generate_ascii(url, width)
-  #if url.end_with? '.gif'
-  #  `convert "#{url}" out%05d.jpg`
-  #else
-    ascii = `convert "#{url}" jpg:- | jp2a --width=#{width} -`
-  #end
-end
-
 client = nil
 
 require 'rbcurse'
@@ -162,11 +154,14 @@ class Form
   # height or width <= 1  ->  fill fraction of parent
   attr_accessor :height, :width
 
+  attr_accessor :content
+
   def initialize(screen)
     @screen = screen
     @row = @col = 0
     @height = @width = 0
     @children = []
+    @content = ''
   end
 
   def real_height
@@ -185,13 +180,12 @@ class Form
     elsif @width > 0
       @width * @parent.real_width
     else
-      @content.split("\n").max{|x| x.length}.length
+      content.split("\n").max{|x| x.length}.length
     end
   end
 
-  attr_accessor :content
   def real_content
-    @content.wrap(real_width)
+    content.split("\n")
   end
 
   def draw
@@ -221,22 +215,30 @@ class Post < Form
     @parent = parent
     @height = @width = 1
 
-    @content = case post['type']
+    @elements = case post['type']
       when 'text' then
-        "#{post['title']}\n---\n#{post['body']}"
+        [ post['title'], post['body'] ]
       when 'link' then
-        "#{post['title']}\n---\n#{post['url']}\n#{generate_ascii(post['link_image'], 20).lines.map{|l| "|" + " "*20 + l}.join("\n") if post.include? 'link_image'}"
+        elements = [ post['title'], post['url'] ]
+        elements << Image.new(post['link_image'], 20) if post.include? 'link_image'
       when 'photo' then
-        "#{post['caption']}\n---\n#{generate_ascii(post['photos'][0]['original_size']['url'], real_width-10).lines.map{|l| "|  "+l + ""}.join("\n")}"
+        [ post['caption'], Image.new(post['photos'][0]['original_size']['url'], real_width-10) ]
       else
-        "POST TYPE IM NOT PARSING: #{post['type']}"
+        [ "POST TYPE IM NOT PARSING: #{post['type']}" ]
     end
-    #if post['type'] == 'text'
-    #@content = "#{post['title']}\n---\n#{post['body']}"
-    #if post.include? 'photos'
-    #  ascii = generate_ascii(post['photos'][0]['original_size']['url'])
-    #  @content += "\n#{ascii}"
-    #end
+  end
+
+  def content
+    @elements.map { |x|
+      case x
+        when String then
+          x.to_s.wrap(real_width)
+        when Image then
+          x.to_s
+        else
+          ''
+      end
+    }.join("\n---\n")
   end
 end
 
@@ -245,8 +247,41 @@ class Separator < Form
     super(screen)
     @parent = parent
     @height = @width = 1
-    @content = ('==' * real_width + "\n") * 2
+    @content = ('==' * real_width)
   end
+end
+
+class Image
+
+  def initialize(url, width)
+    @current_frame_index = 0
+    if url.end_with? '.gif'
+      `convert "#{url}" -coalesce -set dispose previous /tmp/termblr_%05d.jpg`
+      all_jpg = `ls /tmp/termblr_*.jpg`.split(/\s/).sort
+      @frames = all_jpg.map{|x| `jp2a --width=#{width} #{x}`}
+      `rm /tmp/termblr_*.jpg`
+    else
+      ascii = `convert "#{url}" jpg:- | jp2a --width=#{width} -`
+      @frames = [ ascii ]
+    end
+  end
+
+  def current_frame
+    if not @frames.empty?
+      if @current_frame_index >= @frames.length
+        @current_frame_index = 0
+      end
+
+      frame = @frames[@current_frame_index]
+      @current_frame_index +=1
+    else
+      frame = ''
+    end
+
+    frame
+  end
+
+  alias to_s current_frame
 end
 
 Screen.new.open do |screen|
